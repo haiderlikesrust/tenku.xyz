@@ -4,7 +4,8 @@ services:
     container_name: tenku
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Only localhost — public traffic goes through Caddy/Nginx on 80/443
+      - "127.0.0.1:3000:3000"
     env_file:
       - .env
     environment:

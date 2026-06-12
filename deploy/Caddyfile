@@ -1,0 +1,16 @@
+# Caddy reverse proxy for Tenku
+# DNS: point tenku.xyz (and optionally www) A record → your VPS IP
+# Install: see deploy/README-reverse-proxy.md
+
+www.tenku.xyz {
+	redir https://tenku.xyz{uri} permanent
+}
+
+tenku.xyz {
+	# Match MAX_UPLOAD_SIZE_MB (default 100)
+	request_body {
+		max_size 100MB
+	}
+
+	reverse_proxy 127.0.0.1:3000
+}
