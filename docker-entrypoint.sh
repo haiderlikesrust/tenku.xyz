@@ -11,7 +11,7 @@ fi
 cd /app
 
 echo "Running database migrations..."
-node ./node_modules/prisma/build/index.js migrate deploy
+prisma migrate deploy --schema ./prisma/schema.prisma
 
 echo "Starting Tenku..."
 exec node server.js

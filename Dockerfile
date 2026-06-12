@@ -38,18 +38,18 @@ ENV STORAGE_PATH="/data/storage"
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 --ingroup nodejs nextjs \
   && mkdir -p /data/storage \
-  && chown -R nextjs:nodejs /data
+  && chown -R nextjs:nodejs /data \
+  && npm install -g prisma@6.19.3 \
+  && npm cache clean --force
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Prisma (migrations + client for migrate deploy)
+# Prisma schema/migrations + generated client (runtime)
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 # Native modules referenced by serverExternalPackages
 COPY --from=builder /app/node_modules/sharp ./node_modules/sharp
