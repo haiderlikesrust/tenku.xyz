@@ -4,6 +4,12 @@ import { db } from "@/lib/db";
 
 import { requireAuth } from "@/lib/auth-helpers";
 
+import {
+  canEditFile,
+  canEditFolderContents,
+  getFolderAccess,
+} from "@/lib/folder-access";
+
 import { generateShareToken } from "@/lib/share";
 
 import { deleteFileFromDisk } from "@/lib/storage";
@@ -28,13 +34,13 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const file = await db.file.findFirst({
 
-    where: { id, userId: user!.id, deletedAt: null },
+    where: { id, deletedAt: null },
 
   });
 
 
 
-  if (!file) {
+  if (!file || !(await canEditFile(id, user!.id))) {
 
     return NextResponse.json({ error: "File not found" }, { status: 404 });
 
@@ -62,11 +68,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
 
-    const file = await db.file.findFirst({
-
-      where: { id, userId: user!.id },
-
-    });
+    const file = await db.file.findUnique({ where: { id } });
 
 
 
@@ -98,6 +100,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (restore === true) {
 
+      if (file.userId !== user!.id) {
+
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+      }
+
       const ok = await restoreFile(id, user!.id);
 
       if (!ok) {
@@ -109,6 +117,14 @@ export async function PATCH(request: Request, context: RouteContext) {
       const restored = await db.file.findUnique({ where: { id } });
 
       return NextResponse.json(restored);
+
+    }
+
+
+
+    if (!(await canEditFile(id, user!.id))) {
+
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
 
     }
 
@@ -146,6 +162,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (isPublic !== undefined) {
 
+      if (file.userId !== user!.id) {
+
+        return NextResponse.json({ error: "Only the file owner can change sharing" }, { status: 403 });
+
+      }
+
       data.isPublic = isPublic;
 
       if (isPublic && !file.shareToken) {
@@ -168,17 +190,23 @@ export async function PATCH(request: Request, context: RouteContext) {
 
       if (folderId) {
 
-        const folder = await db.folder.findFirst({
+        const access = await getFolderAccess(folderId, user!.id);
 
-          where: { id: folderId, userId: user!.id },
-
-        });
-
-        if (!folder) {
+        if (!access || !(await canEditFolderContents(folderId, user!.id))) {
 
           return NextResponse.json({ error: "Folder not found" }, { status: 404 });
 
         }
+
+        if (access.ownerId !== file.userId) {
+
+          return NextResponse.json({ error: "Cannot move file outside owner storage" }, { status: 400 });
+
+        }
+
+      } else if (file.userId !== user!.id) {
+
+        return NextResponse.json({ error: "Cannot move shared files to root" }, { status: 400 });
 
       }
 
@@ -189,6 +217,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 
     if (starred !== undefined) {
+
+      if (file.userId !== user!.id) {
+
+        return NextResponse.json({ error: "Only the file owner can star files" }, { status: 403 });
+
+      }
 
       data.starred = starred;
 
@@ -234,15 +268,11 @@ export async function DELETE(request: Request, context: RouteContext) {
 
 
 
-  const file = await db.file.findFirst({
-
-    where: { id, userId: user!.id },
-
-  });
+  const file = await db.file.findUnique({ where: { id } });
 
 
 
-  if (!file) {
+  if (!file || !(await canEditFile(id, user!.id))) {
 
     return NextResponse.json({ error: "File not found" }, { status: 404 });
 
@@ -252,7 +282,13 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   if (permanent || file.deletedAt) {
 
-    await deleteFileFromDisk(user!.id, file.id);
+    if (file.userId !== user!.id) {
+
+      return NextResponse.json({ error: "Only the owner can permanently delete" }, { status: 403 });
+
+    }
+
+    await deleteFileFromDisk(file.userId, file.id);
 
     await db.file.delete({ where: { id } });
 
@@ -275,5 +311,3 @@ export async function DELETE(request: Request, context: RouteContext) {
   return NextResponse.json({ success: true, trashed: true });
 
 }
-
-

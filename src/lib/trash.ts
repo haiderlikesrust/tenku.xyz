@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { canEditFile } from "@/lib/folder-access";
 import { deleteFileFromDisk } from "@/lib/storage";
 
 const TRASH_RETENTION_DAYS = 7;
@@ -9,9 +10,9 @@ export function getTrashRetentionMs(): number {
 
 export async function softDeleteFile(fileId: string, userId: string): Promise<boolean> {
   const file = await db.file.findFirst({
-    where: { id: fileId, userId, deletedAt: null },
+    where: { id: fileId, deletedAt: null },
   });
-  if (!file) return false;
+  if (!file || !(await canEditFile(fileId, userId))) return false;
 
   await db.file.update({
     where: { id: fileId },

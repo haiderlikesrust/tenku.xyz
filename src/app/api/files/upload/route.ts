@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-helpers";
+import { canEditFolderContents, getFolderAccess } from "@/lib/folder-access";
 import { folderHasAutoShare } from "@/lib/folders";
 import { computeExpiresAt } from "@/lib/file-lifetime";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -34,18 +35,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "File exceeds maximum upload size" }, { status: 413 });
     }
 
-    const quota = await assertStorageAvailable(user!.id, file.size);
-    if (!quota.ok) {
-      return NextResponse.json({ error: quota.message }, { status: 413 });
-    }
+    let ownerId = user!.id;
 
     if (folderId) {
-      const folder = await db.folder.findFirst({
-        where: { id: folderId, userId: user!.id },
-      });
-      if (!folder) {
+      const access = await getFolderAccess(folderId, user!.id);
+      if (!access || !(await canEditFolderContents(folderId, user!.id))) {
         return NextResponse.json({ error: "Folder not found" }, { status: 404 });
       }
+      ownerId = access.ownerId;
+    }
+
+    const quota = await assertStorageAvailable(ownerId, file.size);
+    if (!quota.ok) {
+      return NextResponse.json({ error: quota.message }, { status: 413 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     }
 
     const { mimeType } = validation;
-    const shouldAutoShare = await folderHasAutoShare(folderId, user!.id);
+    const shouldAutoShare = await folderHasAutoShare(folderId, ownerId);
 
     const record = await db.file.create({
       data: {
@@ -63,7 +65,8 @@ export async function POST(request: Request) {
         originalName: file.name,
         mimeType,
         size: file.size,
-        userId: user!.id,
+        userId: ownerId,
+        uploadedById: user!.id,
         folderId: folderId || null,
         expiresAt: computeExpiresAt(),
         ...(shouldAutoShare
@@ -72,7 +75,7 @@ export async function POST(request: Request) {
       },
     });
 
-    const storedName = await saveFile(user!.id, record.id, file.name, buffer);
+    const storedName = await saveFile(ownerId, record.id, file.name, buffer);
 
     const updated = await db.file.update({
       where: { id: record.id },
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
     });
 
     if (mimeType.startsWith("image/")) {
-      void generateImageThumbnail(user!.id, record.id, storedName);
+      void generateImageThumbnail(ownerId, record.id, storedName);
     }
 
     return NextResponse.json(updated, { status: 201 });

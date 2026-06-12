@@ -23,6 +23,7 @@ import {
   Inbox,
   FolderInput,
   Shield,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,6 +45,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { StorageBar } from "@/components/storage-bar";
 import { FileThumbnail } from "@/components/file-thumbnail";
 import { MoveFileDialog } from "@/components/move-file-dialog";
+import { FolderMembersDialog } from "@/components/folder-members-dialog";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useLocale } from "@/components/locale-provider";
 import { cn } from "@/lib/utils";
@@ -87,6 +89,7 @@ export function FileExplorer() {
   const [bulkWorking, setBulkWorking] = useState(false);
   const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   const [createDropZone, setCreateDropZone] = useState(false);
+  const [membersTarget, setMembersTarget] = useState<FolderItem | null>(null);
 
   const fetchContents = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -385,13 +388,39 @@ export function FileExplorer() {
     fetchContents();
   }
 
-  const hasFolders = viewMode === "browse" && folders.length > 0;
+  const ownedFolders = folders.filter((f) => !f.sharedWithMe);
+  const sharedFolders = folders.filter((f) => f.sharedWithMe);
+  const displayFolders = currentFolderId ? folders : ownedFolders;
+  const hasFolders = viewMode === "browse" && displayFolders.length > 0;
+  const hasSharedFolders =
+    viewMode === "browse" && !currentFolderId && sharedFolders.length > 0;
   const hasFiles = files.length > 0;
-  const isEmpty = !loading && !hasFolders && !hasFiles;
+  const isEmpty = !loading && !hasFolders && !hasSharedFolders && !hasFiles;
   const isTrashView = viewMode === "trash";
   const showBrowseChrome = viewMode === "browse";
+  const isSharedContext =
+    currentFolder?.sharedWithMe === true || currentFolder?.accessRole === "editor";
+  const canManageSharing = !isSharedContext;
+
+  async function handleLeaveFolder() {
+    if (!currentFolder) return;
+    try {
+      const res = await fetch(
+        `/api/folders/${currentFolder.id}/members?userId=${encodeURIComponent(session?.user?.id ?? "")}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) throw new Error("Leave failed");
+      toast.success(t("leftFolder"));
+      setCurrentFolderId(null);
+      setBreadcrumbs([{ id: null, name: "My Files" }]);
+      fetchContents();
+    } catch {
+      toast.error("Failed to leave folder");
+    }
+  }
 
   function FolderCard({ folder }: { folder: FolderItem }) {
+    const isOwner = folder.accessRole !== "editor";
     return (
       <div className="group relative rounded-lg border bg-card p-3 transition-colors hover:bg-muted/40">
         <button
@@ -401,21 +430,35 @@ export function FileExplorer() {
         >
           <div
             className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${
-              folder.autoShare ? "bg-primary/10" : "bg-amber-500/10"
+              folder.sharedWithMe
+                ? "bg-sky-500/10"
+                : folder.autoShare
+                  ? "bg-primary/10"
+                  : "bg-amber-500/10"
             }`}
           >
             <Folder
-              className={`size-5 ${folder.autoShare ? "text-primary" : "text-amber-500"}`}
+              className={`size-5 ${
+                folder.sharedWithMe
+                  ? "text-sky-500"
+                  : folder.autoShare
+                    ? "text-primary"
+                    : "text-amber-500"
+              }`}
             />
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
             <p className="truncate font-medium leading-tight">{folder.name}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {folder.autoShare
-                ? "Auto-share"
-                : folder.isDropZone
-                  ? "Drop zone"
-                  : "Folder"}
+              {folder.sharedWithMe
+                ? `${t("sharedBy")} ${folder.ownerEmail ?? "…"}`
+                : folder.autoShare
+                  ? "Auto-share"
+                  : folder.isDropZone
+                    ? "Drop zone"
+                    : (folder.memberCount ?? 0) > 0
+                      ? `${folder.memberCount} ${t("members")}`
+                      : "Folder"}
             </p>
           </div>
         </button>
@@ -437,22 +480,32 @@ export function FileExplorer() {
                 onClick={() => setRenameTarget({ type: "folder", item: folder })}
               >
                 <Pencil className="mr-2 size-4" />
-                Rename
+                {t("rename")}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setShareTarget({ type: "folder", item: folder })}
-              >
-                <Share2 className="mr-2 size-4" />
-                Share settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => setDeleteTarget({ type: "folder", item: folder })}
-              >
-                <Trash2 className="mr-2 size-4" />
-                Delete
-              </DropdownMenuItem>
+              {isOwner && (
+                <DropdownMenuItem onClick={() => setMembersTarget(folder)}>
+                  <Users className="mr-2 size-4" />
+                  {t("shareWithUser")}
+                </DropdownMenuItem>
+              )}
+              {isOwner && (
+                <DropdownMenuItem
+                  onClick={() => setShareTarget({ type: "folder", item: folder })}
+                >
+                  <Share2 className="mr-2 size-4" />
+                  {t("shareSettings")}
+                </DropdownMenuItem>
+              )}
+              {isOwner && <DropdownMenuSeparator />}
+              {isOwner && (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => setDeleteTarget({ type: "folder", item: folder })}
+                >
+                  <Trash2 className="mr-2 size-4" />
+                  {t("delete")}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -493,7 +546,7 @@ export function FileExplorer() {
             </p>
           </div>
         </button>
-        {!selectionMode && !isTrashView && (
+        {!selectionMode && !isTrashView && canManageSharing && (
           <Button
             variant="ghost"
             size="icon"
@@ -560,10 +613,12 @@ export function FileExplorer() {
                   <Pencil className="mr-2 size-4" />
                   {t("rename")}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShareTarget({ type: "file", item: file })}>
-                  <Share2 className="mr-2 size-4" />
-                  {t("shareSettings")}
-                </DropdownMenuItem>
+                {canManageSharing && (
+                  <DropdownMenuItem onClick={() => setShareTarget({ type: "file", item: file })}>
+                    <Share2 className="mr-2 size-4" />
+                    {t("shareSettings")}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   variant="destructive"
@@ -687,7 +742,18 @@ export function FileExplorer() {
               ))}
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              {currentFolder && (
+              {currentFolder && canManageSharing && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setMembersTarget(currentFolder)}
+                >
+                  <Users className="size-3.5" />
+                  <span className="ml-1.5 hidden sm:inline">{t("shareWithUser")}</span>
+                </Button>
+              )}
+              {currentFolder && canManageSharing && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -698,6 +764,16 @@ export function FileExplorer() {
                 >
                   <Share2 className="size-3.5" />
                   <span className="ml-1.5 hidden sm:inline">{t("shareSettings")}</span>
+                </Button>
+              )}
+              {currentFolder && isSharedContext && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={handleLeaveFolder}
+                >
+                  {t("leaveFolder")}
                 </Button>
               )}
               <DropdownMenu>
@@ -720,26 +796,30 @@ export function FileExplorer() {
                     <Folder className="mr-2 size-4" />
                     {t("newFolder")}
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setCreateSchoolFolder(true);
-                      setCreateDropZone(false);
-                      setCreateFolderOpen(true);
-                    }}
-                  >
-                    <Share className="mr-2 size-4" />
-                    {t("autoShareFolder")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setCreateSchoolFolder(false);
-                      setCreateDropZone(true);
-                      setCreateFolderOpen(true);
-                    }}
-                  >
-                    <Inbox className="mr-2 size-4" />
-                    {t("dropZoneFolder")}
-                  </DropdownMenuItem>
+                  {canManageSharing && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setCreateSchoolFolder(true);
+                        setCreateDropZone(false);
+                        setCreateFolderOpen(true);
+                      }}
+                    >
+                      <Share className="mr-2 size-4" />
+                      {t("autoShareFolder")}
+                    </DropdownMenuItem>
+                  )}
+                  {canManageSharing && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setCreateSchoolFolder(false);
+                        setCreateDropZone(true);
+                        setCreateFolderOpen(true);
+                      }}
+                    >
+                      <Inbox className="mr-2 size-4" />
+                      {t("dropZoneFolder")}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
               {hasFiles && (
@@ -757,6 +837,13 @@ export function FileExplorer() {
               )}
             </div>
           </div>
+        )}
+
+        {showBrowseChrome && isSharedContext && currentFolder?.ownerEmail && (
+          <p className="mb-4 rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-sm text-muted-foreground">
+            {t("sharedFolder")} — {t("sharedBy")}{" "}
+            <span className="font-medium text-foreground">{currentFolder.ownerEmail}</span>
+          </p>
         )}
 
         {showBrowseChrome && (
@@ -796,13 +883,30 @@ export function FileExplorer() {
               <section>
                 <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <Folder className="size-4" />
-                  Folders
+                  {t("folders")}
                   <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-                    {folders.length}
+                    {displayFolders.length}
                   </span>
                 </h2>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-                  {folders.map((folder) => (
+                  {displayFolders.map((folder) => (
+                    <FolderCard key={folder.id} folder={folder} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {hasSharedFolders && (
+              <section>
+                <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Users className="size-4" />
+                  {t("sharedWithMe")}
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {sharedFolders.length}
+                  </span>
+                </h2>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+                  {sharedFolders.map((folder) => (
                     <FolderCard key={folder.id} folder={folder} />
                   ))}
                 </div>
@@ -863,6 +967,16 @@ export function FileExplorer() {
         file={moveFile}
         onMoved={() => fetchContents()}
       />
+
+      {membersTarget && (
+        <FolderMembersDialog
+          open={!!membersTarget}
+          onOpenChange={(open) => !open && setMembersTarget(null)}
+          folderId={membersTarget.id}
+          folderName={membersTarget.name}
+          onUpdated={() => fetchContents({ silent: true })}
+        />
+      )}
 
       {shareTarget && (
         <ShareSettingsDialog

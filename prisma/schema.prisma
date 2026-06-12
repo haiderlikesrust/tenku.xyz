@@ -8,17 +8,19 @@ datasource db {
 }
 
 model User {
-  id                String      @id @default(cuid())
-  email             String      @unique
+  id                String         @id @default(cuid())
+  email             String         @unique
   name              String?
   password          String
-  role              String      @default("user")
-  locale            String      @default("en")
-  notifyOnShareView Boolean     @default(false)
+  role              String         @default("user")
+  locale            String         @default("en")
+  notifyOnShareView Boolean        @default(false)
   folders           Folder[]
   files             File[]
+  uploadedFiles     File[]         @relation("UploadedFiles")
+  folderMemberships FolderMember[]
   shareViews        ShareView[]
-  createdAt         DateTime    @default(now())
+  createdAt         DateTime       @default(now())
 }
 
 model Folder {
@@ -35,8 +37,22 @@ model Folder {
   isDropZone Boolean     @default(false)
   shareToken String?     @unique
   dropToken  String?     @unique
-  createdAt  DateTime    @default(now())
+  createdAt  DateTime       @default(now())
   shareViews ShareView[]
+  members    FolderMember[]
+}
+
+model FolderMember {
+  id        String   @id @default(cuid())
+  folderId  String
+  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("editor")
+  invitedBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([folderId, userId])
 }
 
 model File {
@@ -47,6 +63,8 @@ model File {
   size         Int
   userId       String
   user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  uploadedById String?
+  uploadedBy   User?       @relation("UploadedFiles", fields: [uploadedById], references: [id], onDelete: SetNull)
   folderId     String?
   folder       Folder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
   isPublic     Boolean     @default(false)

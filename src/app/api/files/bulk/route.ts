@@ -4,7 +4,7 @@ import type { Archiver } from "archiver";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth-helpers";
-import { activeFileWhere } from "@/lib/file-filters";
+import { canEditFile } from "@/lib/folder-access";
 import { deleteFileFromDisk, getFileStoragePath } from "@/lib/storage";
 import { softDeleteFile, restoreFile } from "@/lib/trash";
 
@@ -45,22 +45,29 @@ export async function POST(request: Request) {
     }
 
     if (action === "delete_permanent") {
-      const files = await db.file.findMany({
+      const candidates = await db.file.findMany({
         where: { id: { in: fileIds }, userId: user!.id, deletedAt: { not: null } },
       });
-      for (const file of files) {
-        await deleteFileFromDisk(user!.id, file.id);
+      for (const file of candidates) {
+        await deleteFileFromDisk(file.userId, file.id);
         await db.file.delete({ where: { id: file.id } });
       }
-      return NextResponse.json({ deleted: files.length });
+      return NextResponse.json({ deleted: candidates.length });
     }
 
-    const files = await db.file.findMany({
+    const candidates = await db.file.findMany({
       where: {
         id: { in: fileIds },
-        ...activeFileWhere(user!.id),
+        deletedAt: null,
       },
     });
+
+    const files = [];
+    for (const file of candidates) {
+      if (await canEditFile(file.id, user!.id)) {
+        files.push(file);
+      }
+    }
 
     if (files.length === 0) {
       return NextResponse.json({ error: "No files found" }, { status: 404 });
@@ -87,7 +94,7 @@ export async function POST(request: Request) {
 
       for (const file of files) {
         const filePath = path.resolve(
-          getFileStoragePath(user!.id, file.id, file.name)
+          getFileStoragePath(file.userId, file.id, file.name)
         );
         archive.file(filePath, { name: uniqueZipName(file.originalName, usedNames) });
       }

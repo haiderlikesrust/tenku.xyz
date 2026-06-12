@@ -59,6 +59,18 @@ export const en = {
   totalStorage: "Total storage",
   purgeNow: "Purge expired & trash",
   purgeDone: "Purge complete",
+  sharedWithMe: "Shared with me",
+  shareWithUser: "Share with user",
+  sharedBy: "Shared by",
+  folderMembers: "Folder members",
+  inviteByEmail: "Invite by email",
+  invite: "Invite",
+  memberInvited: "User invited",
+  memberRemoved: "Member removed",
+  leaveFolder: "Leave folder",
+  leftFolder: "You left the folder",
+  members: "members",
+  sharedFolder: "Shared folder",
 } as const;
 
 export type MessageKey = keyof typeof en;

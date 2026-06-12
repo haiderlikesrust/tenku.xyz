@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { canReadFolder } from "@/lib/folder-access";
 import { isFileExpired } from "@/lib/file-lifetime";
 import { deleteFileFromDisk } from "@/lib/storage";
 
@@ -50,6 +51,10 @@ export async function canAccessFile(
   }
 
   if (userId && file.userId === userId) {
+    return { file, allowed: true };
+  }
+
+  if (userId && file.folderId && (await canReadFolder(file.folderId, userId))) {
     return { file, allowed: true };
   }
 
