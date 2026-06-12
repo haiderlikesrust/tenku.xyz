@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { getPublicOrigin } from "@/lib/public-url";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 function getIp(request: NextRequest): string {
@@ -9,6 +10,7 @@ function getIp(request: NextRequest): string {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const origin = getPublicOrigin(request);
 
   if (pathname.startsWith("/api/auth/") && request.method === "POST") {
     if (!checkRateLimit(`auth:${getIp(request)}`, 30, 60_000)) {
@@ -23,14 +25,15 @@ export async function middleware(request: NextRequest) {
   });
 
   if (!token) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("callbackUrl", request.url);
+    const loginUrl = new URL("/login", origin);
+    const callback = new URL(pathname + request.nextUrl.search, origin).toString();
+    loginUrl.searchParams.set("callbackUrl", callback);
     return NextResponse.redirect(loginUrl);
   }
 
   if (pathname.startsWith("/admin")) {
     if (token.role !== "admin") {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      return NextResponse.redirect(new URL("/dashboard", origin));
     }
   }
 

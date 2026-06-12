@@ -12,6 +12,10 @@ services:
       DATABASE_URL: file:/data/tenku.db
       STORAGE_PATH: /data/storage
       NODE_ENV: production
+      # Must match your public URL (also set in .env for compose substitution)
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
     volumes:
       - tenku_data:/data
 
