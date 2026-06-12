@@ -2,22 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { getPublicOrigin } from "@/lib/public-url";
-import { checkRateLimit } from "@/lib/rate-limit";
-
-function getIp(request: NextRequest): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const origin = getPublicOrigin(request);
-
-  if (pathname.startsWith("/api/auth/") && request.method === "POST") {
-    if (!checkRateLimit(`auth:${getIp(request)}`, 30, 60_000)) {
-      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-    }
-    return NextResponse.next();
-  }
 
   const token = await getToken({
     req: request,
@@ -41,5 +29,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/admin/:path*", "/api/auth/:path*"],
+  // Do NOT include /api/auth/* — session endpoint must return JSON, not a login redirect
+  matcher: ["/dashboard/:path*", "/admin/:path*"],
 };
+
