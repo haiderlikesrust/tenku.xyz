@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tenku — Cloud Storage + Sharing
+
+[tenku.xyz](https://tenku.xyz)
+
+A full-stack cloud storage web app built with Next.js. Users can create accounts, organize files in folders, upload any file type, preview PDFs and media in the browser, and share public links.
+
+## Features
+
+- User registration and login (email + password)
+- Nested folder management
+- Drag-and-drop file upload (all file types)
+- Public sharing via unique links for files and folders
+- In-browser previews: PDF, images, text, video, audio
+- Local disk storage (configurable path)
+
+## Tech Stack
+
+- **Frontend:** Next.js 16, React, Tailwind CSS, shadcn/ui
+- **Backend:** Next.js API Routes, NextAuth.js
+- **Database:** SQLite via Prisma
+- **Storage:** Local filesystem (`./storage`)
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 20+
+- npm
+
+### Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Edit `.env` and set a secure `NEXTAUTH_SECRET` (e.g. `openssl rand -base64 32`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx prisma migrate dev
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Learn More
+### Environment Variables
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | SQLite database path | `file:./dev.db` |
+| `NEXTAUTH_SECRET` | Session encryption secret | (required) |
+| `NEXTAUTH_URL` | App base URL | `http://localhost:3000` |
+| `STORAGE_PATH` | Upload directory | `./storage` |
+| `MAX_UPLOAD_SIZE_MB` | Max file size in MB | `100` |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Usage
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **Register** at `/register` or **sign in** at `/login`
+2. Open the **dashboard** to manage files
+3. Create folders, upload files via drag-and-drop
+4. Use the **Share settings** menu on any file or folder to make it public
+5. Copy the share link and send it to anyone — no account required to view
 
-## Deploy on Vercel
+## Project Structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+├── app/              # Pages and API routes
+├── components/       # UI components (file explorer, preview, upload)
+├── lib/              # Auth, database, storage helpers
+└── types/            # TypeScript types
+prisma/               # Database schema and migrations
+storage/              # Uploaded files (gitignored)
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Production build |
+| `npm run start` | Start production server |
+| `npx prisma studio` | Open database GUI |
+
+## License
+
+MIT

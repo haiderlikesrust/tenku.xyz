@@ -1,0 +1,18 @@
+services:
+  tenku:
+    build: .
+    container_name: tenku
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: file:/data/tenku.db
+      STORAGE_PATH: /data/storage
+      NODE_ENV: production
+    volumes:
+      - tenku_data:/data
+
+volumes:
+  tenku_data:

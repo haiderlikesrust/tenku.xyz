@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String      @id @default(cuid())
+  email             String      @unique
+  name              String?
+  password          String
+  role              String      @default("user")
+  locale            String      @default("en")
+  notifyOnShareView Boolean     @default(false)
+  folders           Folder[]
+  files             File[]
+  shareViews        ShareView[]
+  createdAt         DateTime    @default(now())
+}
+
+model Folder {
+  id         String      @id @default(cuid())
+  name       String
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId   String?
+  parent     Folder?     @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   Folder[]    @relation("FolderTree")
+  files      File[]
+  isPublic   Boolean     @default(false)
+  autoShare  Boolean     @default(false)
+  isDropZone Boolean     @default(false)
+  shareToken String?     @unique
+  dropToken  String?     @unique
+  createdAt  DateTime    @default(now())
+  shareViews ShareView[]
+}
+
+model File {
+  id           String      @id @default(cuid())
+  name         String
+  originalName String
+  mimeType     String
+  size         Int
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderId     String?
+  folder       Folder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  isPublic     Boolean     @default(false)
+  shareToken   String?     @unique
+  starred      Boolean     @default(false)
+  deletedAt    DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime    @default(now())
+  shareViews   ShareView[]
+}
+
+model ShareView {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileId   String?
+  file     File?    @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  folderId String?
+  folder   Folder?  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  viewedAt DateTime @default(now())
+}
