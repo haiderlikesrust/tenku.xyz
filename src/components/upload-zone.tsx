@@ -1,9 +1,61 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { Loader2, Upload, CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/types/storage";
+
+function extensionForMime(mime: string): string {
+  switch (mime) {
+    case "image/jpeg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/gif":
+      return ".gif";
+    case "image/webp":
+      return ".webp";
+    case "image/heic":
+      return ".heic";
+    case "image/heif":
+      return ".heif";
+    case "video/mp4":
+      return ".mp4";
+    case "video/quicktime":
+      return ".mov";
+    default:
+      return "";
+  }
+}
+
+function normalizeFileName(file: File, index: number): string {
+  const trimmed = file.name?.trim();
+  if (trimmed && trimmed !== "." && trimmed !== "..") return trimmed;
+
+  const ext = extensionForMime(file.type) || ".jpg";
+  return `photo-${Date.now()}-${index}${ext}`;
+}
+
+/** iOS Safari invalidates File refs when the input is cleared mid-upload. */
+async function stabilizeFiles(files: File[]): Promise<File[]> {
+  const stabilized: File[] = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      const buffer = await file.arrayBuffer();
+      if (buffer.byteLength === 0) continue;
+
+      const name = normalizeFileName(file, i);
+      const type = file.type || "image/jpeg";
+      stabilized.push(new File([buffer], name, { type, lastModified: file.lastModified }));
+    } catch {
+      // Skip unreadable entries from the picker.
+    }
+  }
+
+  return stabilized;
+}
 
 type UploadStatus = "pending" | "uploading" | "done" | "error";
 
@@ -21,6 +73,8 @@ type UploadZoneProps = {
 };
 
 export function UploadZone({ folderId, onUploaded, disabled }: UploadZoneProps) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [entries, setEntries] = useState<UploadEntry[]>([]);
@@ -34,25 +88,51 @@ export function UploadZone({ folderId, onUploaded, disabled }: UploadZoneProps) 
     async (files: FileList | File[]) => {
       if (disabled || uploadingRef.current) return;
 
-      const fileList = Array.from(files);
-      if (fileList.length === 0) return;
+      const picked = Array.from(files);
+      if (picked.length === 0) return;
 
       uploadingRef.current = true;
       setUploading(true);
 
-      const initialEntries: UploadEntry[] = fileList.map((file, i) => ({
+      const initialEntries: UploadEntry[] = picked.map((file, i) => ({
         id: `${Date.now()}-${i}`,
-        name: file.name,
-        status: "pending",
+        name: normalizeFileName(file, i),
+        status: "pending" as const,
       }));
       setEntries(initialEntries);
+
+      const fileList = await stabilizeFiles(picked);
+      if (fileList.length === 0) {
+        setEntries((prev) =>
+          prev.map((e) => ({
+            ...e,
+            status: "error",
+            error: "Could not read selected files",
+          }))
+        );
+        uploadingRef.current = false;
+        setUploading(false);
+        setTimeout(() => setEntries([]), 3000);
+        return;
+      }
+
+      if (fileList.length !== picked.length) {
+        setEntries(
+          fileList.map((file, i) => ({
+            id: `${Date.now()}-stable-${i}`,
+            name: file.name,
+            status: "pending" as const,
+          }))
+        );
+      }
 
       const uploaded: FileItem[] = [];
 
       try {
         for (let i = 0; i < fileList.length; i++) {
           const file = fileList[i];
-          const entryId = initialEntries[i].id;
+          const entryId =
+            initialEntries[i]?.id ?? `${Date.now()}-stable-${i}`;
 
           updateEntry(entryId, { status: "uploading" });
 
@@ -90,10 +170,23 @@ export function UploadZone({ folderId, onUploaded, disabled }: UploadZoneProps) 
       } finally {
         uploadingRef.current = false;
         setUploading(false);
+        if (inputRef.current) {
+          inputRef.current.value = "";
+        }
         setTimeout(() => setEntries([]), 2000);
       }
     },
     [disabled, folderId, onUploaded]
+  );
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const input = e.target;
+      const selected = input.files ? Array.from(input.files) : [];
+      if (selected.length === 0) return;
+      void uploadFiles(selected);
+    },
+    [uploadFiles]
   );
 
   const doneCount = entries.filter((e) => e.status === "done").length;
@@ -122,16 +215,22 @@ export function UploadZone({ folderId, onUploaded, disabled }: UploadZoneProps) 
         }}
       >
         <input
+          ref={inputRef}
+          id={inputId}
           type="file"
           multiple
-          className="absolute inset-0 cursor-pointer opacity-0"
+          accept="image/*,video/*,.heic,.heif,.mov"
+          className="sr-only"
           disabled={disabled || uploading}
-          onChange={(e) => {
-            if (e.target.files?.length) {
-              uploadFiles(e.target.files);
-              e.target.value = "";
-            }
-          }}
+          onChange={handleInputChange}
+        />
+        <label
+          htmlFor={inputId}
+          className={cn(
+            "absolute inset-0 cursor-pointer",
+            (disabled || uploading) && "pointer-events-none"
+          )}
+          aria-hidden="true"
         />
 
         {uploading ? (

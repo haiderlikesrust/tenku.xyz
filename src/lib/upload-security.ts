@@ -6,9 +6,12 @@ const ALLOWED_MIMES = new Set([
   "image/jpeg",
   "image/gif",
   "image/webp",
+  "image/heic",
+  "image/heif",
   "text/plain",
   "application/json",
   "video/mp4",
+  "video/quicktime",
   "video/webm",
   "audio/mpeg",
   "audio/wav",
@@ -28,6 +31,9 @@ const EXT_TO_MIME: Record<string, string> = {
   jpeg: "image/jpeg",
   gif: "image/gif",
   webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+  mov: "video/quicktime",
   txt: "text/plain",
   json: "application/json",
   mp4: "video/mp4",
@@ -63,7 +69,13 @@ export async function validateUpload(
     guessed !== "application/octet-stream" &&
     detected.mime !== guessed
   ) {
-    return { ok: false, error: "File type does not match extension" };
+    const bothImages =
+      detected.mime.startsWith("image/") && guessed.startsWith("image/");
+    const bothVideos =
+      detected.mime.startsWith("video/") && guessed.startsWith("video/");
+    if (!bothImages && !bothVideos) {
+      return { ok: false, error: "File type does not match extension" };
+    }
   }
 
   return { ok: true, mimeType };
@@ -77,6 +89,7 @@ export const SAFE_INLINE_MIMES = new Set([
   "image/webp",
   "text/plain",
   "video/mp4",
+  "video/quicktime",
   "video/webm",
   "audio/mpeg",
   "audio/wav",
